@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>김민진님의 시작페이지</title>
+  <style>
+    /* 기본 리셋 및 폰트 설정 */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: #ffffff;
+      color: #1e293b;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 40px 20px;
+    }
+
+    /* 메인 컨테이너 */
+    .container {
+      width: 100%;
+      max-width: 720px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 36px;
+    }
+
+    /* 프로필 및 시계 영역 */
+    .header {
+      text-align: center;
+    }
+
+    .user-name {
+      font-size: 2.25rem;
+      font-weight: 800;
+      color: #0f172a; /* 남색 계열 메인 컬러 */
+      margin-bottom: 12px;
+      letter-spacing: -0.02em;
+    }
+
+    .date-display {
+      font-size: 1rem;
+      color: #64748b;
+      margin-bottom: 6px;
+      font-weight: 500;
+    }
+
+    .time-display {
+      font-size: 3rem;
+      font-weight: 700;
+      color: #1e293b;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.03em;
+    }
+
+    /* 구글 검색창 영역 */
+    .search-form {
+      width: 100%;
+      display: flex;
+      gap: 10px;
+      background-color: #ffffff;
+      padding: 8px;
+      border-radius: 9999px;
+      border: 2px solid #f1f5f9;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
+      transition: all 0.2s ease;
+    }
+
+    .search-form:focus-within {
+      border-color: #8b5cf6; /* 보라색 포인트 */
+      box-shadow: 0 10px 25px -5px rgba(139, 92, 246, 0.15);
+    }
+
+    .search-input {
+      flex: 1;
+      border: none;
+      outline: none;
+      padding: 14px 24px;
+      font-size: 1rem;
+      border-radius: 9999px;
+      background: transparent;
+      color: #1e293b;
+    }
+
+    .search-input::placeholder {
+      color: #94a3b8;
+    }
+
+    .search-button {
+      background-color: #0f172a; /* 남색 */
+      color: #ffffff;
+      border: none;
+      outline: none;
+      padding: 14px 28px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      border-radius: 9999px;
+      cursor: pointer;
+      transition: background-color 0.2s ease, transform 0.1s ease;
+      white-space: nowrap;
+    }
+
+    .search-button:hover {
+      background-color: #1e293b;
+    }
+
+    .search-button:active {
+      transform: scale(0.98);
+    }
+
+    /* 바로가기 아이콘 그리드 */
+    .shortcuts-grid {
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 16px;
+    }
+
+    .shortcut-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      text-decoration: none;
+      color: #334155;
+      padding: 20px 12px;
+      background-color: #ffffff;
+      border: 1px solid #f1f5f9;
+      border-radius: 20px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+      transition: all 0.2s ease;
+    }
+
+    .shortcut-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 20px -4px rgba(0, 0, 0, 0.08);
+      border-color: transparent;
+    }
+
+    .icon-badge {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      font-weight: 700;
+      font-size: 1.1rem;
+    }
+
+    /* 각 아이콘 포인트 색상 정의 */
+    .bg-green { background-color: #10b981; }  /* 초록: ChatGPT */
+    .bg-navy  { background-color: #0f172a; }  /* 남색: Gmail */
+    .bg-purple{ background-color: #8b5cf6; }  /* 보라: Google Drive */
+    .bg-brown { background-color: #78350f; }  /* 갈색: Google Calendar */
+    .bg-navy-light { background-color: #334155; } /* 보조 남색: YouTube */
+
+    .shortcut-label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #475569;
+    }
+
+    /* 반응형 디자인 (모바일) */
+    @media (max-width: 640px) {
+      .container {
+        gap: 28px;
+      }
+
+      .user-name {
+        font-size: 1.75rem;
+      }
+
+      .time-display {
+        font-size: 2.25rem;
+      }
+
+      .search-form {
+        flex-direction: row;
+        padding: 6px;
+      }
+
+      .search-input {
+        padding: 10px 16px;
+        font-size: 0.95rem;
+      }
+
+      .search-button {
+        padding: 10px 20px;
+        font-size: 0.9rem;
+      }
+
+      .shortcuts-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+      }
+    }
+
+    @media (max-width: 400px) {
+      .shortcuts-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <main class="container">
+    <!-- 헤더: 이름 및 시간 -->
+    <header class="header">
+      <h1 class="user-name">김민진님, 좋은 하루 되세요!</h1>
+      <div class="date-display" id="date-display">2026년 00월 00일 (요일)</div>
+      <div class="time-display" id="time-display">00:00:00</div>
+    </header>
+
+    <!-- 구글 검색창 -->
+    <form class="search-form" action="https://www.google.com/search" method="get" target="_blank">
+      <input 
+        type="text" 
+        name="q" 
+        class="search-input" 
+        placeholder="Google 검색어를 입력하세요..." 
+        autocomplete="off"
+        required
+      />
+      <button type="submit" class="search-button">웹 검색</button>
+    </form>
+
+    <!-- 바로가기 영역 -->
+    <nav class="shortcuts-grid">
+      <!-- ChatGPT (초록) -->
+      <a href="https://chatgpt.com" target="_blank" class="shortcut-card">
+        <div class="icon-badge bg-green">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10H12V2z"></path><path d="M12 12L2.5 7.5"></path><path d="M12 12v10"></path></svg>
+        </div>
+        <span class="shortcut-label">ChatGPT</span>
+      </a>
+
+      <!-- Gmail (남색) -->
+      <a href="https://mail.google.com" target="_blank" class="shortcut-card">
+        <div class="icon-badge bg-navy">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"></rect><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path></svg>
+        </div>
+        <span class="shortcut-label">Gmail</span>
+      </a>
+
+      <!-- Google Drive (보라) -->
+      <a href="https://drive.google.com" target="_blank" class="shortcut-card">
+        <div class="icon-badge bg-purple">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H9L3 12l3 10h12l6-10L15 2z"></path></svg>
+        </div>
+        <span class="shortcut-label">Drive</span>
+      </a>
+
+      <!-- Google Calendar (갈색) -->
+      <a href="https://calendar.google.com" target="_blank" class="shortcut-card">
+        <div class="icon-badge bg-brown">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"></rect><line x1="16" x2="16" y1="2" y2="6"></line><line x1="8" x2="8" y1="2" y2="6"></line><line x1="3" x2="21" y1="10" y2="10"></line></svg>
+        </div>
+        <span class="shortcut-label">Calendar</span>
+      </a>
+
+      <!-- YouTube (남색-보조) -->
+      <a href="https://youtube.com" target="_blank" class="shortcut-card">
+        <div class="icon-badge bg-navy-light">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.56 49.56 0 0 1-16.2 0A2 2 0 0 1 2.5 17"></path><polygon points="10 15 15 12 10 9 10 15"></polygon></svg>
+        </div>
+        <span class="shortcut-label">YouTube</span>
+      </a>
+    </nav>
+  </main>
+
+  <script>
+    // 날짜 및 시계 갱신 함수
+    function updateClock() {
+      const now = new Date();
+
+      // 요일 배열
+      const days = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
+      
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const date = String(now.getDate()).padStart(2, '0');
+      const dayName = days[now.getDay()];
+
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const seconds = String(now.getSeconds()).padStart(2, '0');
+
+      document.getElementById('date-display').textContent = `${year}년 ${month}월 ${date}일 (${dayName})`;
+      document.getElementById('time-display').textContent = `${hours}:${minutes}:${seconds}`;
+    }
+
+    // 초기 실행 및 1초 간격 업데이트
+    updateClock();
+    setInterval(updateClock, 1000);
+  </script>
+</body>
+</html>
