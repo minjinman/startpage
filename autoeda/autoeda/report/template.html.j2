@@ -1,0 +1,82 @@
+{% if not fragment %}<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>자동 데이터 분석 리포트</title>
+{% endif %}
+<style>
+.autoeda{--fg:#1f2933;--mut:#6b7785;--line:#e2e6ea;--acc:#3b6ea8;--bg:#fff;--soft:#f5f7fa;--warn:#fff6e5;--warnb:#f0c36d;
+  font-family:-apple-system,"Malgun Gothic","맑은 고딕","Apple SD Gothic Neo","Noto Sans KR",sans-serif;color:var(--fg);background:var(--bg);
+  line-height:1.6;max-width:1040px;margin:0 auto;padding:24px 16px}
+@media (prefers-color-scheme:dark){.autoeda{--fg:#e6e9ed;--mut:#9aa5b1;--line:#363d46;--acc:#7fb0e6;--bg:#171a1e;--soft:#20252b;--warn:#3a3220;--warnb:#8a6d2b}}
+.autoeda h1{font-size:1.7rem;margin:0 0 4px}
+.autoeda h2{font-size:1.25rem;margin:36px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--line)}
+.autoeda .meta{color:var(--mut);font-size:.9rem}
+.autoeda .box{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:12px 16px;margin:12px 0}
+.autoeda .warnbox{background:var(--warn);border:1px solid var(--warnb);border-radius:8px;padding:12px 16px;margin:12px 0}
+.autoeda .note{color:var(--mut);font-size:.88rem;margin:6px 0}
+.autoeda ul{margin:6px 0;padding-left:22px}
+.autoeda li{margin:3px 0}
+.autoeda .tblwrap{overflow-x:auto;margin:10px 0}
+.autoeda table.tbl{border-collapse:collapse;font-size:.86rem;min-width:50%}
+.autoeda table.tbl th,.autoeda table.tbl td{border-bottom:1px solid var(--line);padding:5px 10px;text-align:left;white-space:nowrap}
+.autoeda table.tbl th{background:var(--soft);font-weight:600}
+.autoeda table.tbl td{white-space:normal}
+.autoeda img{max-width:100%;height:auto;display:block;margin:10px 0;background:#fff;border-radius:6px}
+.autoeda .cap{color:var(--mut);font-size:.84rem;margin:2px 0 8px}
+.autoeda nav a{color:var(--acc);text-decoration:none;margin-right:12px;font-size:.9rem}
+.autoeda pre{background:var(--soft);padding:10px 14px;border-radius:6px;overflow-x:auto;font-size:.85rem}
+.autoeda code{font-size:.9em}
+</style>
+{% if not fragment %}</head><body>{% endif %}
+<div class="autoeda">
+  <h1>자동 데이터 분석 리포트</h1>
+  <div class="meta">{{ source }} · {{ shape }}</div>
+
+  <div class="warnbox"><b>읽기 전에</b> — 이 리포트는 <b>탐색적 분석</b>입니다. 많은 분석을 자동으로 수행하므로 우연히 나온 패턴이 섞일 수 있어
+    다중비교 보정(FDR)과 효과크기 기준을 적용했습니다. 상관·연관성은 <b>인과관계를 증명하지 않으며</b>, 중요한 결론은 도메인 지식과 추가 검증으로 확인해야 합니다.</div>
+
+  <nav>
+    <a href="#summary">핵심 발견</a><a href="#assump">가정과 판단 근거</a><a href="#clean">정제 내역</a>
+    {% for s in sections %}<a href="#{{ s.id }}">{{ s.title }}</a>{% endfor %}
+    <a href="#limits">경고·한계</a><a href="#appendix">부록</a>
+  </nav>
+
+  <h2 id="summary">핵심 발견</h2>
+  {% if key_findings %}<ol>{% for t in key_findings %}<li>{{ t|safe }}</li>{% endfor %}</ol>
+  <div class="note">효과크기 × 표본 수 기반 점수로 자동 선별했습니다. 선별 기준 때문에 중요한 항목이 빠질 수 있으니 아래 상세 섹션도 확인하세요.</div>
+  {% else %}<p>자동 선별 기준을 넘는 뚜렷한 발견이 없습니다. 상세 섹션을 확인하세요.</p>{% endif %}
+
+  <h2 id="assump">가정과 판단 근거</h2>
+  <div class="box"><ul>{% for a in assumptions %}<li>{{ a|safe }}</li>{% endfor %}</ul></div>
+
+  <h2 id="clean">정제 내역</h2>
+  <div class="note">원본은 바꾸지 않았고, 분석용 복사본에 아래 변경을 적용했습니다.</div>
+  {% if cleaning %}<ul>{% for x in cleaning %}<li>{{ x|safe }}</li>{% endfor %}</ul>{% else %}<p>변경 사항이 없습니다.</p>{% endif %}
+
+  {% for s in sections %}
+  <h2 id="{{ s.id }}">{{ s.title }}</h2>
+  {% for b in s.blocks %}
+    {% if b.type == 'text' %}<p>{{ b.html|safe }}</p>
+    {% elif b.type == 'note' %}<div class="note">{{ b.html|safe }}</div>
+    {% elif b.type == 'table' %}<div class="tblwrap">{{ b.html|safe }}</div>{% if b.caption %}<div class="cap">{{ b.caption }}</div>{% endif %}
+    {% elif b.type == 'image' %}<img alt="차트" src="data:image/png;base64,{{ b.b64 }}">{% if b.caption %}<div class="cap">{{ b.caption }}</div>{% endif %}
+    {% endif %}
+  {% endfor %}
+  {% endfor %}
+
+  <h2 id="limits">경고·한계 / 분석하지 못한 항목</h2>
+  {% if warnings %}<div class="warnbox"><b>경고</b><ul>{% for w in warnings %}<li>{{ w|safe }}</li>{% endfor %}</ul></div>{% endif %}
+  {% if skipped %}<div class="box"><b>수행하지 않았거나 실패한 분석</b><ul>
+    {% for t, r in skipped %}<li><b>{{ t|safe }}</b> — {{ r|safe }}</li>{% endfor %}</ul></div>
+  {% else %}<p>계획한 분석이 모두 수행되었습니다.</p>{% endif %}
+
+  <h2 id="appendix">부록</h2>
+  <h3>컬럼 타입 판정표</h3>
+  <div class="tblwrap">{{ col_table|safe }}</div>
+  <h3>사용한 임계값</h3>
+  <div class="tblwrap">{{ thresholds|safe }}</div>
+  <h3>재현 정보</h3>
+  <ul>{% for k, v in repro.items() if k != '재현 코드' %}<li>{{ k }}: {{ v }}</li>{% endfor %}</ul>
+  <pre>{{ repro['재현 코드'] }}</pre>
+</div>
+{% if not fragment %}</body></html>{% endif %}

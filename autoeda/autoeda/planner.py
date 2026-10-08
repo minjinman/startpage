@@ -1,0 +1,198 @@
+"""분석 계획 수립(plan_analysis) 과 실행(run).
+
+판단은 규칙표로 이뤄지며, 모든 단계에 '왜 이 분석을 하는지'가 기록됩니다.
+계획은 실행 전에 노트북에서 확인·수정할 수 있습니다.
+"""
+from __future__ import annotations
+
+import difflib
+import html
+import traceback
+from dataclasses import dataclass, field
+
+import pandas as pd
+
+from . import config as C
+from .analyzers import REGISTRY
+from .coltypes import KIND_LABEL, apply_overrides, infer_types
+from .kind import KindMatch, detect_kinds
+from .loader import load
+from .model import Ctx, Section
+from .validate import select_key
+
+
+@dataclass
+class Step:
+    id: str
+    title: str
+    reason: str
+    params: dict = field(default_factory=dict)
+    enabled: bool = True
+
+
+@dataclass
+class Plan:
+    df: pd.DataFrame
+    cols: dict
+    kinds: list[KindMatch]
+    steps: list[Step]
+    assumptions: list[str]
+    not_implemented: list[tuple[str, str]]
+    cleaning_log: list[str]
+    params: dict
+    source: str
+
+    # --- 노트북에서 계획 수정 ---
+    def drop(self, *ids: str) -> "Plan":
+        self._set(ids, False)
+        return self
+
+    def keep_only(self, *ids: str) -> "Plan":
+        for s in self.steps:
+            s.enabled = s.id in ids
+        return self
+
+    def enable(self, *ids: str) -> "Plan":
+        self._set(ids, True)
+        return self
+
+    def set_param(self, step_id: str, **kw) -> "Plan":
+        for s in self.steps:
+            if s.id == step_id:
+                s.params.update(kw)
+                return self
+        raise KeyError(f"단계 '{step_id}' 가 없습니다. 가능한 단계: {[s.id for s in self.steps]}")
+
+    def _set(self, ids, val):
+        known = {s.id for s in self.steps}
+        bad = [i for i in ids if i not in known]
+        if bad:
+            raise KeyError(f"없는 단계: {bad}. 가능한 단계: {sorted(known)}")
+        for s in self.steps:
+            if s.id in ids:
+                s.enabled = val
+
+    def run(self):
+        return run(self)
+
+    # --- 표시 ---
+    def __repr__(self):
+        lines = ["[분석 계획]", *[f" - {a}" for a in self.assumptions], "", "[실행 단계]"]
+        for s in self.steps:
+            lines.append(f" {'✔' if s.enabled else '✘'} {s.id}: {s.title} — {s.reason}")
+        if self.not_implemented:
+            lines += ["", "[감지됐지만 아직 전용 분석이 없는 항목]", *[f" - {t}: {r}" for t, r in self.not_implemented]]
+        return "\n".join(lines)
+
+    def _repr_html_(self):
+        e = html.escape
+        h = ["<h3>분석 계획</h3><ul>", *[f"<li>{e(a)}</li>" for a in self.assumptions], "</ul>",
+             "<table><tr><th>사용</th><th>단계</th><th>제목</th><th>이유</th></tr>"]
+        for s in self.steps:
+            h.append(f"<tr><td>{'✔' if s.enabled else '✘'}</td><td>{e(s.id)}</td><td>{e(s.title)}</td><td>{e(s.reason)}</td></tr>")
+        h.append("</table>")
+        if self.not_implemented:
+            h.append("<p><b>감지됐지만 아직 전용 분석이 없는 항목</b></p><ul>" +
+                     "".join(f"<li>{e(t)}: {e(r)}</li>" for t, r in self.not_implemented) + "</ul>")
+        h.append("<p style='color:#666'>수정: <code>plan.drop('단계')</code>, <code>plan.set_param('단계', ...)</code> 후 <code>plan.run()</code></p>")
+        return "".join(h)
+
+
+def _check_col(name, df, label):
+    if name is None:
+        return
+    if name not in df.columns:
+        close = difflib.get_close_matches(str(name), [str(c) for c in df.columns], n=3, cutoff=0.4)
+        hint = f" 비슷한 컬럼: {close}" if close else ""
+        raise ValueError(f"{label}='{name}' 컬럼이 데이터에 없습니다.{hint}")
+
+
+def plan_analysis(data, target=None, time=None, group=None, types=None, sheet=None, seed=C.SEED) -> Plan:
+    """데이터를 읽고 정제한 뒤 분석 계획을 세운다. 실행은 하지 않는다.
+
+    target: 예측/설명하려는 컬럼(지정할 때만 사용. 자동 추정하지 않음)
+    time:   시간 컬럼(미지정 시 날짜형 컬럼에서 추정)
+    group:  집단 비교 기준 컬럼
+    types:  {"컬럼": "numeric|categorical|datetime|id|text|exclude"} 로 타입 판정을 덮어씀
+    """
+    df, log, source = load(data, sheet=sheet)
+    for label, v in (("target", target), ("time", time), ("group", group)):
+        _check_col(v, df, label)
+    types = dict(types or {})
+    if time and time not in types and not pd.api.types.is_datetime64_any_dtype(df[time]):
+        types[time] = "datetime"
+    cols = infer_types(df)
+    df, cols = apply_overrides(df, cols, types, log)
+
+    kinds = detect_kinds(df, cols, time=time)
+    ana = {k: [c for c, i in cols.items() if i.kind == k] for k in ("numeric", "categorical")}
+    n_num, n_cat = len(ana["numeric"]), len(ana["categorical"])
+    cat_ok = [c for c in ana["categorical"] if 2 <= cols[c].n_unique <= C.MAX_LEVELS]
+
+    assumptions = [
+        f"입력: {source} — {len(df):,}행 × {df.shape[1]}열",
+        f"컬럼 판정: 수치형 {n_num}, 범주형 {n_cat}, 날짜 {sum(i.kind == 'datetime' for i in cols.values())}, "
+        f"제외 {sum(i.kind in ('id', 'constant', 'empty', 'text', 'excluded') for i in cols.values())}",
+    ]
+    for k in kinds:
+        if k.kind != "general":
+            assumptions.append(f"데이터 종류 [{k.kind}] {k.level}: {k.evidence}")
+    for label, v in (("target", target), ("time", time), ("group", group)):
+        if v:
+            assumptions.append(f"사용자 지정 {label} = '{v}'")
+    if not target:
+        assumptions.append("target이 지정되지 않아 예측·설명 모델은 만들지 않고 탐색 분석만 수행합니다(target은 자동 추정하지 않습니다).")
+    assumptions.append("모든 결과는 탐색적(가설 생성용)이며 인과관계를 증명하지 않습니다.")
+
+    steps = [
+        Step("overview", "데이터 개요", "모든 데이터에 공통"),
+        Step("quality", "결측·중복 점검", "모든 데이터에 공통"),
+    ]
+    if n_num:
+        steps += [
+            Step("outliers", "이상치", f"수치형 컬럼 {n_num}개 존재"),
+            Step("dist_numeric", "수치형 분포", f"수치형 컬럼 {n_num}개 존재"),
+        ]
+    if n_cat:
+        steps.append(Step("dist_categorical", "범주형 분포", f"범주형 컬럼 {n_cat}개 존재"))
+    if n_num >= 2:
+        steps.append(Step("corr_numeric", "수치형 상관", f"수치형 컬럼 {n_num}개 → 쌍별 스피어만 상관(순위 기반이라 이상치·비선형 단조에 강건)"))
+    if len(cat_ok) >= 2:
+        steps.append(Step("assoc_categorical", "범주형 연관성", f"분석 가능한 범주형 컬럼 {len(cat_ok)}개 → Cramér's V"))
+    if n_num and (cat_ok or group):
+        why = f"사용자 지정 group='{group}' 기준으로 수치 변수 비교" if group else f"범주형 {len(cat_ok)}개 × 수치형 {n_num}개 → 비모수 집단 비교"
+        steps.append(Step("group_numeric", "집단별 수치 차이", why, {"group": group} if group else {}))
+
+    ni: list[tuple[str, str]] = []
+    if target:
+        ni.append((f"target '{target}' 기반 분석", "예측·중요도 분석은 아직 구현 전입니다(P2 예정)."))
+    for k in kinds:
+        if k.kind == "timeseries":
+            ni.append(("시계열 분석", "날짜 컬럼이 감지됐지만 추세·계절성·이상구간 전용 분석은 아직 구현 전입니다(P3 예정)."))
+        elif k.kind == "survey":
+            ni.append(("설문 분석", "설문형 컬럼이 감지됐지만 문항 신뢰도·집단 비교 전용 분석은 아직 구현 전입니다(P4 예정)."))
+        elif k.kind == "process":
+            ni.append(("공정 분석", "공정형 컬럼이 감지됐지만 관리도·공정능력 전용 분석은 아직 구현 전입니다(P4 예정)."))
+
+    params = {"target": target, "time": time, "group": group, "types": types or None, "sheet": sheet, "seed": seed}
+    return Plan(df, cols, kinds, steps, assumptions, ni, log, params, source)
+
+
+def run(plan: Plan):
+    from .report.model import Report
+
+    ctx = Ctx(plan.df, plan.cols, plan.kinds, plan.params, plan.params["seed"])
+    sections: list[Section] = []
+    skipped: list[tuple[str, str]] = list(plan.not_implemented)
+    for st in plan.steps:
+        if not st.enabled:
+            skipped.append((st.title, "사용자가 계획에서 제외했습니다."))
+            continue
+        try:
+            sections.append(REGISTRY[st.id](ctx, **st.params))
+        except Exception as e:   # 한 단계의 실패가 전체를 막지 않도록 하되 숨기지 않고 기록
+            tb = traceback.extract_tb(e.__traceback__)[-1]
+            skipped.append((st.title, f"실행 중 오류: {type(e).__name__}: {e} ({tb.filename.split('/')[-1]}:{tb.lineno})"))
+    findings = [f for s in sections for f in s.findings]
+    return Report(plan=plan, sections=sections, key_findings=select_key(findings),
+                  warnings=ctx.warnings, notes=ctx.notes, skipped=skipped)

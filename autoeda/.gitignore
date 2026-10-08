@@ -1,0 +1,6 @@
+__pycache__/
+*.egg-info/
+.pytest_cache/
+report.html
+llm_brief*.md
+llm_brief*_aliases.tsv
