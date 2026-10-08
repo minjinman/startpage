@@ -96,3 +96,38 @@ def importance_bar(names: list[str], means, sds, xlabel: str) -> str:
         ax.axvline(0, color=_GRAY, lw=0.8)
         ax.set_xlabel(xlabel)
         return _b64(fig)
+
+
+def ts_panel(label: str, s: pd.Series, intervals: list[tuple], cps: list, acf_vals, conf: float) -> str:
+    """위: 시계열 + 이상구간(붉은 음영) + 변화점(점선) / 아래: 자기상관(ACF)."""
+    with _rc():
+        fig = Figure(figsize=(9, 4.4), layout="constrained")
+        ax, ax2 = fig.subplots(2, 1, gridspec_kw={"height_ratios": [3, 1.4]})
+        ax.plot(s.index, s.values, color=_BLUE, lw=0.9)
+        for a, b in intervals:
+            ax.axvspan(a, b, color=_RED, alpha=0.25, lw=0)
+        for c in cps:
+            ax.axvline(c, color="#444", ls="--", lw=1)
+        ax.set_title(label, fontsize=10, loc="left")
+        ax.tick_params(axis="x", labelsize=8)
+        if acf_vals is not None:
+            lags = np.arange(len(acf_vals))
+            ax2.bar(lags[1:], np.asarray(acf_vals)[1:], color=_BLUE, width=0.8)
+            ax2.axhline(conf, color=_GRAY, ls=":", lw=1)
+            ax2.axhline(-conf, color=_GRAY, ls=":", lw=1)
+            ax2.set_ylabel("ACF", fontsize=8)
+            ax2.set_xlabel("지연(lag)", fontsize=8)
+        return _b64(fig)
+
+
+def stl_panel(label: str, observed: pd.Series, trend, seasonal, resid) -> str:
+    with _rc():
+        fig = Figure(figsize=(9, 5.6), layout="constrained")
+        axes = fig.subplots(4, 1, sharex=True)
+        for ax, (name, v, col) in zip(axes, [("관측", observed, _BLUE), ("추세", trend, "#2a7f62"),
+                                              ("계절", seasonal, "#b8860b"), ("잔차", resid, _GRAY)]):
+            ax.plot(observed.index, np.asarray(v), color=col, lw=0.8)
+            ax.set_ylabel(name, fontsize=8)
+            ax.tick_params(labelsize=8)
+        axes[0].set_title(label + " — STL 분해", fontsize=10, loc="left")
+        return _b64(fig)

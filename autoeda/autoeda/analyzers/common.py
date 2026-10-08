@@ -199,10 +199,12 @@ def corr_numeric(ctx: Ctx) -> Section:
         ctx.warn("시간 순서가 있는 데이터는 자기상관 때문에 상관의 p/q값이 실제보다 낙관적일 수 있습니다. 변화량(차분) 기준 확인을 권장합니다.")
     for r in df[df.r.abs() >= C.REDUNDANT_CORR].sort_values("r", key=abs, ascending=False).head(2).itertuples():
         s.add(f"{C_(r.a)} ↔ {C_(r.b)}: 거의 같은 정보입니다(ρ={r.r:+.2f}). 중복 컬럼이거나 한쪽이 다른 쪽에서 계산된 값일 수 있습니다.", 0.8 * abs(r.r))
+    ts = ctx.kind_info("timeseries") is not None
     for r in df[df.flag & (df.r.abs() < C.REDUNDANT_CORR)].sort_values("r", key=abs, ascending=False).head(3).itertuples():
         w = min(1.0, np.sqrt(r.n / 100))
-        s.add(f"{C_(r.a)} ↔ {C_(r.b)}: {'양' if r.r > 0 else '음'}의 단조 상관이 있습니다(ρ={r.r:+.2f}, n={r.n:,}, {qs(r.q)}). 인과관계를 뜻하지는 않습니다.",
-              abs(r.r) * w)
+        extra = " 시계열 데이터의 수준 상관이므로 공통 추세 때문일 수 있어 변화량(차분) 상관 확인이 필요합니다." if ts else " 인과관계를 뜻하지는 않습니다."
+        s.add(f"{C_(r.a)} ↔ {C_(r.b)}: {'양' if r.r > 0 else '음'}의 단조 상관이 있습니다(ρ={r.r:+.2f}, n={r.n:,}, {qs(r.q)}).{extra}",
+              abs(r.r) * w * (0.4 if ts else 1.0))
     return s
 
 
@@ -330,6 +332,7 @@ def group_numeric(ctx: Ctx, group: str | None = None) -> Section:
     return s
 
 
+from . import timeseries as _ts   # noqa: E402
 from . import target as _target   # noqa: E402  (순환 import 방지를 위해 파일 끝에서 가져옴)
 
 REGISTRY = {
@@ -341,6 +344,9 @@ REGISTRY = {
     "corr_numeric": corr_numeric,
     "assoc_categorical": assoc_categorical,
     "group_numeric": group_numeric,
+    "ts_overview": _ts.ts_overview,
+    "ts_series": _ts.ts_series,
+    "ts_diff_corr": _ts.ts_diff_corr,
     "target_overview": _target.target_overview,
     "target_assoc": _target.target_assoc,
     "target_model": _target.target_model,

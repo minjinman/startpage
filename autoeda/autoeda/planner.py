@@ -109,18 +109,19 @@ def _check_col(name, df, label):
 
 
 def plan_analysis(data, target=None, time=None, group=None, types=None, sheet=None, seed=C.SEED,
-                  task=None, groups=None) -> Plan:
+                  task=None, groups=None, entity=None) -> Plan:
     """데이터를 읽고 정제한 뒤 분석 계획을 세운다. 실행은 하지 않는다.
 
     target: 예측/설명하려는 컬럼(지정할 때만 사용. 자동 추정하지 않음)
     time:   시간 컬럼(미지정 시 날짜형 컬럼에서 추정)
     group:  집단 비교 기준 컬럼
     task:   'classification'/'regression' (target 유형을 자동 판정과 다르게 지정할 때)
+    entity: 여러 개체(라인·설비 등)가 한 파일에 섞인 시계열에서 개체를 구분하는 컬럼
     groups: 교차검증에서 같은 대상이 학습·검증에 섞이지 않게 묶을 컬럼(예: 설비·로트·사람 ID)
     types:  {"컬럼": "numeric|categorical|datetime|id|text|exclude"} 로 타입 판정을 덮어씀
     """
     df, log, source = load(data, sheet=sheet)
-    for label, v in (("target", target), ("time", time), ("group", group), ("groups", groups)):
+    for label, v in (("target", target), ("time", time), ("group", group), ("groups", groups), ("entity", entity)):
         _check_col(v, df, label)
     types = dict(types or {})
     if time and time not in types and not pd.api.types.is_datetime64_any_dtype(df[time]):
@@ -141,7 +142,7 @@ def plan_analysis(data, target=None, time=None, group=None, types=None, sheet=No
     for k in kinds:
         if k.kind != "general":
             assumptions.append(f"데이터 종류 [{k.kind}] {k.level}: {k.evidence}")
-    for label, v in (("target", target), ("time", time), ("group", group), ("groups", groups), ("task", task)):
+    for label, v in (("target", target), ("time", time), ("group", group), ("groups", groups), ("entity", entity), ("task", task)):
         if v:
             assumptions.append(f"사용자 지정 {label} = '{v}'")
     if not target:
@@ -182,13 +183,20 @@ def plan_analysis(data, target=None, time=None, group=None, types=None, sheet=No
             ni.append((f"target '{target}' 기반 분석", f"수행할 수 없습니다: {e}"))
     for k in kinds:
         if k.kind == "timeseries":
-            ni.append(("시계열 분석", "날짜 컬럼이 감지됐지만 추세·계절성·이상구간 전용 분석은 아직 구현 전입니다(P3 예정)."))
+            ts_cols = [c for c in ana["numeric"] if not cols[c].discrete]
+            if ts_cols:
+                steps += [Step("ts_overview", "시계열 구조", f"날짜 컬럼 [{k.columns[0]}] 감지 → 간격·누락·개체 구조 점검"),
+                          Step("ts_series", "시계열 분석", f"연속형 수치 {len(ts_cols)}개 → 추세(자기상관 보정)·계절성(STL)·정상성(ADF+KPSS)·이상구간·변화점")]
+                if len(ts_cols) >= 2:
+                    steps.append(Step("ts_diff_corr", "수준 vs 차분 상관", "수치 시계열 2개 이상 → 공통 추세에 의한 가짜 상관 점검"))
+            else:
+                ni.append(("시계열 분석", "날짜 컬럼은 있으나 연속형 수치 컬럼이 없어 수행할 수 없습니다."))
         elif k.kind == "survey":
             ni.append(("설문 분석", "설문형 컬럼이 감지됐지만 문항 신뢰도·집단 비교 전용 분석은 아직 구현 전입니다(P4 예정)."))
         elif k.kind == "process":
             ni.append(("공정 분석", "공정형 컬럼이 감지됐지만 관리도·공정능력 전용 분석은 아직 구현 전입니다(P4 예정)."))
 
-    params = {"target": target, "time": time, "group": group, "groups": groups, "task": task, "types": types or None,
+    params = {"target": target, "time": time, "group": group, "groups": groups, "entity": entity, "task": task, "types": types or None,
               "sheet": sheet, "seed": seed, "_task": resolved, "_task_reason": reason}
     return Plan(df, cols, kinds, steps, assumptions, ni, log, params, source)
 

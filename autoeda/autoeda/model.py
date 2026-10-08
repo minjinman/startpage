@@ -56,6 +56,7 @@ class Ctx:
     seed: int
     warnings: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    cache: dict = field(default_factory=dict)
 
     def names(self, kind: str) -> list[str]:
         return [c for c, i in self.cols.items() if i.kind == kind]

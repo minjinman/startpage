@@ -45,6 +45,20 @@ LEAK_AUC = 0.98                  # 변수 하나만으로 이 AUC 이상이면 �
 LEAK_R2 = 0.95
 IMBALANCE_WARN = 0.10            # 소수 클래스 비율이 이보다 작으면 불균형 경고
 
+# --- 시계열 ----------------------------------------------------------
+MIN_N_TS = 30
+MAX_TS_SERIES = 6                # 시계열 상세 분석 대상 수치 컬럼 상한
+MAX_TS_ENTITIES = 4              # 패널 데이터에서 상세 분석할 개체 수 상한
+TS_MAX_MISSING = 0.20            # 격자 결측이 이보다 많으면 분해 생략
+SEASON_STRONG = 0.40             # STL 계절성 강도 기준
+ANOMALY_Z = 4.0                  # 잔차 z 기준(MAD 척도). 순수 잡음 시뮬레이션으로 오탐 ≈0.1점/720 되도록 보정
+CP_PEN_FACTOR = 4.0              # 변화점 탐지 벌점 계수
+CP_MAX = 3
+SEASON_TIE = 0.05                # 주기 후보 강도 차이가 이 이하면 더 짧은 주기를 선택(과적합 방지)
+ANOMALY_MAX_RATIO = 0.10         # 이상 판정 비율이 이보다 크면 '이상구간'이라 부르지 않음
+CP_RESID_RHO = 0.80              # 변화점 제거 후에도 잔차 자기상관이 이보다 크면(랜덤워크 성격) 변화점 폐기
+STL_MAX_N = 20_000
+
 # --- 규모 제한 --------------------------------------------------------
 MAX_CORR_COLS = 60
 MAX_CAT_COLS = 30
@@ -52,7 +66,7 @@ MAX_CHARTS = 12
 PLOT_SAMPLE_ROWS = 50_000
 TOP_TABLE_ROWS = 15
 KEY_FINDINGS = 5
-KEY_FINDINGS_PER_STEP = 2
+KEY_FINDINGS_PER_STEP = 3
 BRIEF_MIN_GROUP = 5              # llm_brief에서 범주값을 노출하는 최소 집단 크기(현재는 범주값 자체를 생략)
 
 THRESHOLD_TABLE = [
@@ -70,5 +84,6 @@ THRESHOLD_TABLE = [
     ("차트 표시 상한 / 차트용 샘플링 행 수", f"{MAX_CHARTS} / {PLOT_SAMPLE_ROWS:,}"),
     ("모델링 최소 행 수 / 교차검증 폴드 수", f"{MIN_N_MODEL} / {CV_FOLDS}"),
     ("누수 의심 기준 (변수 1개 단독 AUC / R²)", f"{LEAK_AUC} / {LEAK_R2}"),
+    ("시계열 최소 길이 / 계절성 강도 기준 / 이상 z 기준", f"{MIN_N_TS} / {SEASON_STRONG} / {ANOMALY_Z}"),
     ("난수 시드", SEED),
 ]
