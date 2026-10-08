@@ -24,14 +24,16 @@ def long_run_var(x: np.ndarray) -> float:
 
 
 def detect_changepoints(x, min_size: int | None = None, max_cp: int = C.CP_MAX, pen_factor: float = C.CP_PEN_FACTOR) -> list[int]:
-    """변화가 시작되는 위치(인덱스) 목록. 각 위치 k 는 x[:k] 와 x[k:] 의 평균이 다르다는 뜻."""
+    """변화가 시작되는 위치(인덱스) 목록. 각 위치 k 는 x[:k] 와 x[k:] 의 평균이 다르다는 뜻.
+
+    구간마다 '가장 좋은 분할 후보'를 먼저 찾고, 그 분할의 평균을 뺀 잔차로 장기분산을 추정해 벌점을 정한다.
+    (전체 데이터로 분산을 추정하면 변화 자체가 분산을 부풀려 스스로를 가리는 문제가 있다.)
+    """
     x = np.asarray(x, dtype=float)
     n = len(x)
     min_size = min_size or max(10, n // 20)
     if n < 2 * min_size or np.nanstd(x) == 0:
         return []
-    sigma2 = long_run_var(x)
-    pen = pen_factor * sigma2 * np.log(n)
     cs, cs2 = np.concatenate([[0], np.cumsum(x)]), np.concatenate([[0], np.cumsum(x * x)])
 
     def cost(a, b):
@@ -48,8 +50,11 @@ def detect_changepoints(x, min_size: int | None = None, max_cp: int = C.CP_MAX, 
             ks = np.arange(a + min_size, b - min_size + 1)
             gains = np.array([cost(a, b) - cost(a, k) - cost(k, b) for k in ks])
             i = int(np.argmax(gains))
+            k = int(ks[i])
+            resid = np.concatenate([x[a:k] - x[a:k].mean(), x[k:b] - x[k:b].mean()])
+            pen = pen_factor * long_run_var(resid) * np.log(n)
             if gains[i] > pen and (best is None or gains[i] > best[0]):
-                best = (gains[i], int(ks[i]), (a, b))
+                best = (gains[i], k, (a, b))
         if best is None:
             break
         _, k, seg = best

@@ -30,6 +30,13 @@ def _f(x, nd=3):
     return f"{x:.{nd}g}"
 
 
+def f2(x) -> str:
+    """소수 둘째 자리 고정 서식(지수·상관·효과크기용)."""
+    if x is None or (isinstance(x, float) and np.isnan(x)) or not np.isfinite(x):
+        return "-"
+    return f"{x:.2f}"
+
+
 # ------------------------------------------------------------------ 개요
 def overview(ctx: Ctx) -> Section:
     s = Section("overview", "데이터 개요")
@@ -200,6 +207,11 @@ def corr_numeric(ctx: Ctx) -> Section:
     for r in df[df.r.abs() >= C.REDUNDANT_CORR].sort_values("r", key=abs, ascending=False).head(2).itertuples():
         s.add(f"{C_(r.a)} ↔ {C_(r.b)}: 거의 같은 정보입니다(ρ={r.r:+.2f}). 중복 컬럼이거나 한쪽이 다른 쪽에서 계산된 값일 수 있습니다.", 0.8 * abs(r.r))
     ts = ctx.kind_info("timeseries") is not None
+    sv = ctx.kind_info("survey")
+    sv_cols = set(sv.columns) if sv else set()
+    if sv_cols:
+        s.note("설문 문항끼리의 상관은 같은 개념을 재도록 만든 문항이라 높은 것이 정상이므로 핵심 발견에서 제외했습니다(신뢰도 단계에서 다룹니다).")
+        df = df[~(df.a.isin(sv_cols) & df.b.isin(sv_cols))]
     for r in df[df.flag & (df.r.abs() < C.REDUNDANT_CORR)].sort_values("r", key=abs, ascending=False).head(3).itertuples():
         w = min(1.0, np.sqrt(r.n / 100))
         extra = " 시계열 데이터의 수준 상관이므로 공통 추세 때문일 수 있어 변화량(차분) 상관 확인이 필요합니다." if ts else " 인과관계를 뜻하지는 않습니다."
@@ -332,6 +344,8 @@ def group_numeric(ctx: Ctx, group: str | None = None) -> Section:
     return s
 
 
+from . import process as _proc   # noqa: E402
+from . import survey as _survey   # noqa: E402
 from . import timeseries as _ts   # noqa: E402
 from . import target as _target   # noqa: E402  (순환 import 방지를 위해 파일 끝에서 가져옴)
 
@@ -344,6 +358,12 @@ REGISTRY = {
     "corr_numeric": corr_numeric,
     "assoc_categorical": assoc_categorical,
     "group_numeric": group_numeric,
+    "survey_items": _survey.survey_items,
+    "survey_reliability": _survey.survey_reliability,
+    "survey_groups": _survey.survey_groups,
+    "proc_series": _proc.proc_series,
+    "proc_capability": _proc.proc_capability,
+    "proc_attribute": _proc.proc_attribute,
     "ts_overview": _ts.ts_overview,
     "ts_series": _ts.ts_series,
     "ts_diff_corr": _ts.ts_diff_corr,

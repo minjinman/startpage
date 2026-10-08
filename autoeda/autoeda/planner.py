@@ -108,21 +108,44 @@ def _check_col(name, df, label):
         raise ValueError(f"{label}='{name}' 컬럼이 데이터에 없습니다.{hint}")
 
 
+def _check_spec(spec, df):
+    if not spec:
+        return None
+    out = {}
+    for m, v in spec.items():
+        if m not in df.columns:
+            close = difflib.get_close_matches(str(m), [str(c) for c in df.columns], n=3, cutoff=0.4)
+            raise ValueError(f"spec 컬럼 '{m}' 이(가) 데이터에 없습니다. 비슷한 컬럼: {close}")
+        try:
+            lsl, usl = v
+        except (TypeError, ValueError):
+            raise ValueError(f"spec['{m}'] 는 (하한, 상한) 형태여야 합니다(한쪽만 있으면 None). 받은 값: {v!r}")
+        if lsl is None and usl is None:
+            raise ValueError(f"spec['{m}'] 에 하한/상한 중 하나는 있어야 합니다.")
+        if lsl is not None and usl is not None and lsl >= usl:
+            raise ValueError(f"spec['{m}'] 의 하한({lsl})이 상한({usl})보다 크거나 같습니다.")
+        out[m] = (lsl, usl)
+    return out
+
+
 def plan_analysis(data, target=None, time=None, group=None, types=None, sheet=None, seed=C.SEED,
-                  task=None, groups=None, entity=None) -> Plan:
+                  task=None, groups=None, entity=None, lot=None, spec=None) -> Plan:
     """데이터를 읽고 정제한 뒤 분석 계획을 세운다. 실행은 하지 않는다.
 
     target: 예측/설명하려는 컬럼(지정할 때만 사용. 자동 추정하지 않음)
     time:   시간 컬럼(미지정 시 날짜형 컬럼에서 추정)
     group:  집단 비교 기준 컬럼
     task:   'classification'/'regression' (target 유형을 자동 판정과 다르게 지정할 때)
+    lot:    공정 데이터의 로트/배치(부분군) 컬럼(미지정 시 컬럼명에서 추정)
+    spec:   {"측정컬럼": (하한, 상한)} 규격. 한쪽만 있으면 None. (미지정 시 상한/하한/USL/LSL 컬럼에서 추정)
     entity: 여러 개체(라인·설비 등)가 한 파일에 섞인 시계열에서 개체를 구분하는 컬럼
     groups: 교차검증에서 같은 대상이 학습·검증에 섞이지 않게 묶을 컬럼(예: 설비·로트·사람 ID)
     types:  {"컬럼": "numeric|categorical|datetime|id|text|exclude"} 로 타입 판정을 덮어씀
     """
     df, log, source = load(data, sheet=sheet)
-    for label, v in (("target", target), ("time", time), ("group", group), ("groups", groups), ("entity", entity)):
+    for label, v in (("target", target), ("time", time), ("group", group), ("groups", groups), ("entity", entity), ("lot", lot)):
         _check_col(v, df, label)
+    spec = _check_spec(spec, df)
     types = dict(types or {})
     if time and time not in types and not pd.api.types.is_datetime64_any_dtype(df[time]):
         types[time] = "datetime"
@@ -142,7 +165,7 @@ def plan_analysis(data, target=None, time=None, group=None, types=None, sheet=No
     for k in kinds:
         if k.kind != "general":
             assumptions.append(f"데이터 종류 [{k.kind}] {k.level}: {k.evidence}")
-    for label, v in (("target", target), ("time", time), ("group", group), ("groups", groups), ("entity", entity), ("task", task)):
+    for label, v in (("target", target), ("time", time), ("group", group), ("groups", groups), ("entity", entity), ("lot", lot), ("task", task)):
         if v:
             assumptions.append(f"사용자 지정 {label} = '{v}'")
     if not target:
@@ -192,11 +215,20 @@ def plan_analysis(data, target=None, time=None, group=None, types=None, sheet=No
             else:
                 ni.append(("시계열 분석", "날짜 컬럼은 있으나 연속형 수치 컬럼이 없어 수행할 수 없습니다."))
         elif k.kind == "survey":
-            ni.append(("설문 분석", "설문형 컬럼이 감지됐지만 문항 신뢰도·집단 비교 전용 분석은 아직 구현 전입니다(P4 예정)."))
+            steps += [Step("survey_items", "설문 문항 분포·응답 품질", f"설문 문항 {len(k.columns)}개 감지({k.level}) → 응답 분포·일률 응답·천장/바닥"),
+                      Step("survey_reliability", "설문 신뢰도(α)·차원성", "문항 3개 이상 → 크론바흐 α, 역문항·다차원성 점검")]
+            if group or [c for c in cat_ok if c not in k.columns]:
+                steps.append(Step("survey_groups", "설문 점수 집단 비교", "합산 점수 × 집단(범주형)", {"group": group} if group else {}))
         elif k.kind == "process":
-            ni.append(("공정 분석", "공정형 컬럼이 감지됐지만 관리도·공정능력 전용 분석은 아직 구현 전입니다(P4 예정)."))
+            steps.append(Step("proc_series", "공정 관리도·안정성", f"공정 컬럼 감지({k.level}) → 관리도(X̄-S 또는 I-MR)와 안정성 판정"))
+            steps.append(Step("proc_capability", "공정능력(Cp/Cpk)", "안정 공정에 한해 Cpk 계산(규격은 spec= 또는 상한/하한 컬럼)"))
+            if any(set(df[c].dropna().unique()) <= {0, 1} and df[c].nunique() == 2 for c in ana["numeric"]):
+                steps.append(Step("proc_attribute", "불량률(p) 관리도", "0/1 불량 컬럼 + 로트 → p 관리도(Laney 보정)"))
+    if (lot or spec) and not any(k.kind == "process" for k in kinds):
+        steps.append(Step("proc_series", "공정 관리도·안정성", "lot=/spec= 지정"))
+        steps.append(Step("proc_capability", "공정능력(Cp/Cpk)", "안정 공정에 한해 Cpk 계산"))
 
-    params = {"target": target, "time": time, "group": group, "groups": groups, "entity": entity, "task": task, "types": types or None,
+    params = {"target": target, "time": time, "group": group, "groups": groups, "entity": entity, "lot": lot, "spec": spec, "task": task, "types": types or None,
               "sheet": sheet, "seed": seed, "_task": resolved, "_task_reason": reason}
     return Plan(df, cols, kinds, steps, assumptions, ni, log, params, source)
 

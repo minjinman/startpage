@@ -80,17 +80,21 @@ def _survey(df, cols):
             str_scale.append(c)
     if len(str_scale) >= 3:
         matches.append(KindMatch("survey", "확실", f"리커트형 문자열 척도 컬럼 {len(str_scale)}개 (예: {str_scale[:3]})", str_scale))
-    # (2) 숫자 척도: 같은 범위의 소수 정수 값 컬럼이 3개 이상
-    groups: dict[tuple, list[str]] = {}
-    for c, i in cols.items():
-        if i.kind == "numeric" and i.discrete and 3 <= i.n_unique <= 7:
-            v = df[c].dropna()
-            groups.setdefault((int(v.min()), int(v.max())), []).append(c)
-    for rng, cs in groups.items():
-        if len(cs) >= 3 and rng[1] - rng[0] + 1 >= 3:
+    # (2) 숫자 척도: 같은 척도 범위(1~5, 1~7 등) 안에 값이 들어가는 소수 정수 컬럼이 3개 이상.
+    #     한 문항이 4~5점만 쓰는 것처럼 끝 단계를 안 쓰는 문항도 같은 척도로 본다.
+    for lo, hi in [(1, 5), (1, 7), (1, 4), (0, 4), (0, 5), (1, 6), (0, 10), (1, 10)]:
+        cs = []
+        for c, i in cols.items():
+            if i.kind == "numeric" and i.discrete and i.n_unique >= 2:
+                v = df[c].dropna()
+                if v.min() >= lo and v.max() <= hi:
+                    cs.append(c)
+        rich = [c for c in cs if cols[c].n_unique >= 3]
+        if len(cs) >= 3 and len(rich) >= 2:
             matches.append(KindMatch(
                 "survey", "의심",
-                f"값 범위 {rng[0]}~{rng[1]}의 정수 컬럼 {len(cs)}개 (리커트 척도일 수도, 단순 코드일 수도 있음)", cs, {"range": rng}))
+                f"값이 {lo}~{hi} 척도 안에 있는 정수 컬럼 {len(cs)}개 (리커트 척도일 수도, 단순 코드일 수도 있음)", cs, {"range": (lo, hi)}))
+            break
     return matches[:1] if matches else []
 
 
