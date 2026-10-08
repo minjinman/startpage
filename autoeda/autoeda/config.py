@@ -34,6 +34,17 @@ DOMINANT_LEVEL = 0.90
 OUTLIER_WARN_RATIO = 0.05
 IQR_K = 1.5
 
+# --- 타깃 모델링 -----------------------------------------------------
+MIN_N_MODEL = 50                 # 모델링에 필요한 최소 행 수
+MODEL_MAX_ROWS = 50_000          # 이보다 많으면 무작위 표본으로 모델링
+MAX_FEATURES = 60
+CV_FOLDS = 5
+PERM_REPEATS = 5
+PERM_TEST_ROWS = 2000
+LEAK_AUC = 0.98                  # 변수 하나만으로 이 AUC 이상이면 누수 의심
+LEAK_R2 = 0.95
+IMBALANCE_WARN = 0.10            # 소수 클래스 비율이 이보다 작으면 불균형 경고
+
 # --- 규모 제한 --------------------------------------------------------
 MAX_CORR_COLS = 60
 MAX_CAT_COLS = 30
@@ -57,5 +68,7 @@ THRESHOLD_TABLE = [
     ("이상치 기준 (IQR 배수)", IQR_K),
     ("ID성 판정 최소 표본 / 고유값 비율", f"{ID_MIN_N} / {ID_UNIQUE_RATIO:.0%}"),
     ("차트 표시 상한 / 차트용 샘플링 행 수", f"{MAX_CHARTS} / {PLOT_SAMPLE_ROWS:,}"),
+    ("모델링 최소 행 수 / 교차검증 폴드 수", f"{MIN_N_MODEL} / {CV_FOLDS}"),
+    ("누수 의심 기준 (변수 1개 단독 AUC / R²)", f"{LEAK_AUC} / {LEAK_R2}"),
     ("난수 시드", SEED),
 ]

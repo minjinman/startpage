@@ -14,10 +14,11 @@ import pandas as pd
 
 from . import config as C
 from .analyzers import REGISTRY
+from .analyzers.target import TASK_LABEL, decide_task
 from .coltypes import KIND_LABEL, apply_overrides, infer_types
 from .kind import KindMatch, detect_kinds
 from .loader import load
-from .model import Ctx, Section
+from .model import Ctx, Section, StepSkipped
 from .validate import select_key
 
 
@@ -107,16 +108,19 @@ def _check_col(name, df, label):
         raise ValueError(f"{label}='{name}' 컬럼이 데이터에 없습니다.{hint}")
 
 
-def plan_analysis(data, target=None, time=None, group=None, types=None, sheet=None, seed=C.SEED) -> Plan:
+def plan_analysis(data, target=None, time=None, group=None, types=None, sheet=None, seed=C.SEED,
+                  task=None, groups=None) -> Plan:
     """데이터를 읽고 정제한 뒤 분석 계획을 세운다. 실행은 하지 않는다.
 
     target: 예측/설명하려는 컬럼(지정할 때만 사용. 자동 추정하지 않음)
     time:   시간 컬럼(미지정 시 날짜형 컬럼에서 추정)
     group:  집단 비교 기준 컬럼
+    task:   'classification'/'regression' (target 유형을 자동 판정과 다르게 지정할 때)
+    groups: 교차검증에서 같은 대상이 학습·검증에 섞이지 않게 묶을 컬럼(예: 설비·로트·사람 ID)
     types:  {"컬럼": "numeric|categorical|datetime|id|text|exclude"} 로 타입 판정을 덮어씀
     """
     df, log, source = load(data, sheet=sheet)
-    for label, v in (("target", target), ("time", time), ("group", group)):
+    for label, v in (("target", target), ("time", time), ("group", group), ("groups", groups)):
         _check_col(v, df, label)
     types = dict(types or {})
     if time and time not in types and not pd.api.types.is_datetime64_any_dtype(df[time]):
@@ -137,7 +141,7 @@ def plan_analysis(data, target=None, time=None, group=None, types=None, sheet=No
     for k in kinds:
         if k.kind != "general":
             assumptions.append(f"데이터 종류 [{k.kind}] {k.level}: {k.evidence}")
-    for label, v in (("target", target), ("time", time), ("group", group)):
+    for label, v in (("target", target), ("time", time), ("group", group), ("groups", groups), ("task", task)):
         if v:
             assumptions.append(f"사용자 지정 {label} = '{v}'")
     if not target:
@@ -164,8 +168,18 @@ def plan_analysis(data, target=None, time=None, group=None, types=None, sheet=No
         steps.append(Step("group_numeric", "집단별 수치 차이", why, {"group": group} if group else {}))
 
     ni: list[tuple[str, str]] = []
+    resolved = reason = None
     if target:
-        ni.append((f"target '{target}' 기반 분석", "예측·중요도 분석은 아직 구현 전입니다(P2 예정)."))
+        try:
+            resolved, reason = decide_task(df, cols, target, task)
+            assumptions.append(f"target '{target}' → {TASK_LABEL[resolved]} 문제로 판단 (근거: {reason}).")
+            steps += [
+                Step("target_overview", "타깃 개요", f"target='{target}' 지정"),
+                Step("target_assoc", "타깃과 변수의 관계", "변수별 단변량 검정(FDR 보정+효과크기)"),
+                Step("target_model", "예측 모델 평가", "기준선 대비 교차검증 + 누수 점검 + 순열 중요도"),
+            ]
+        except ValueError as e:
+            ni.append((f"target '{target}' 기반 분석", f"수행할 수 없습니다: {e}"))
     for k in kinds:
         if k.kind == "timeseries":
             ni.append(("시계열 분석", "날짜 컬럼이 감지됐지만 추세·계절성·이상구간 전용 분석은 아직 구현 전입니다(P3 예정)."))
@@ -174,7 +188,8 @@ def plan_analysis(data, target=None, time=None, group=None, types=None, sheet=No
         elif k.kind == "process":
             ni.append(("공정 분석", "공정형 컬럼이 감지됐지만 관리도·공정능력 전용 분석은 아직 구현 전입니다(P4 예정)."))
 
-    params = {"target": target, "time": time, "group": group, "types": types or None, "sheet": sheet, "seed": seed}
+    params = {"target": target, "time": time, "group": group, "groups": groups, "task": task, "types": types or None,
+              "sheet": sheet, "seed": seed, "_task": resolved, "_task_reason": reason}
     return Plan(df, cols, kinds, steps, assumptions, ni, log, params, source)
 
 
@@ -190,9 +205,16 @@ def run(plan: Plan):
             continue
         try:
             sections.append(REGISTRY[st.id](ctx, **st.params))
+        except StepSkipped as e:
+            skipped.append((st.title, f"조건을 충족하지 못해 건너뜀: {e}"))
         except Exception as e:   # 한 단계의 실패가 전체를 막지 않도록 하되 숨기지 않고 기록
             tb = traceback.extract_tb(e.__traceback__)[-1]
             skipped.append((st.title, f"실행 중 오류: {type(e).__name__}: {e} ({tb.filename.split('/')[-1]}:{tb.lineno})"))
     findings = [f for s in sections for f in s.findings]
+    tgt = plan.params.get("target")
+    if tgt and plan.params.get("_task"):
+        # 타깃과의 관계는 target_* 단계가 더 정확히(검증 포함) 다루므로 공통 단계의 중복 발견은 핵심 발견에서 뺀다(표는 그대로 유지)
+        dup_steps = {"corr_numeric", "assoc_categorical", "group_numeric"}
+        findings = [f for f in findings if not (f.step in dup_steps and f"⟦{tgt}⟧" in f.text)]
     return Report(plan=plan, sections=sections, key_findings=select_key(findings),
                   warnings=ctx.warnings, notes=ctx.notes, skipped=skipped)

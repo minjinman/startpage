@@ -270,6 +270,22 @@ def assoc_categorical(ctx: Ctx) -> Section:
 
 
 # ------------------------------------------------------------------ 범주-수치 (집단 비교)
+def kruskal_eps(sub: pd.DataFrame, g: str, v: str) -> dict | None:
+    """집단(g)별 수치(v) 분포 차이: 크러스칼-월리스 H, p, 효과크기 ε², 집단별 중앙값."""
+    groups = {k: x[v].to_numpy() for k, x in sub.groupby(g, observed=True) if len(x) >= C.MIN_GROUP_N}
+    k = len(groups)
+    n = sum(len(x) for x in groups.values())
+    if k < 2 or n < 10:
+        return None
+    try:
+        H, p = stats.kruskal(*groups.values())
+    except ValueError:   # 모든 값이 동일
+        return None
+    eps2 = float(np.clip((H - k + 1) / (n - k), 0, 1))
+    return {"k": k, "n": n, "H": float(H), "eps2": eps2, "p": float(p),
+            "meds": {kk: float(np.median(x)) for kk, x in groups.items()}}
+
+
 def group_numeric(ctx: Ctx, group: str | None = None) -> Section:
     s = Section("group_numeric", "집단별 수치 차이 (크러스칼-월리스)")
     if group:
@@ -286,18 +302,10 @@ def group_numeric(ctx: Ctx, group: str | None = None) -> Section:
         for v in nums:
             if v == g:
                 continue
-            sub = ctx.df[[g, v]].dropna()
-            groups = {k: x[v].to_numpy() for k, x in sub.groupby(g, observed=True) if len(x) >= C.MIN_GROUP_N}
-            k = len(groups)
-            n = sum(len(x) for x in groups.values())
-            if k < 2 or n < 10:
+            r = kruskal_eps(ctx.df[[g, v]].dropna(), g, v)
+            if r is None:
                 continue
-            try:
-                H, p = stats.kruskal(*groups.values())
-            except ValueError:   # 모든 값이 동일
-                continue
-            eps2 = float(np.clip((H - k + 1) / (n - k), 0, 1))
-            meds = {kk: float(np.median(x)) for kk, x in groups.items()}
+            k, n, H, eps2, p, meds = r["k"], r["n"], r["H"], r["eps2"], r["p"], r["meds"]
             hi, lo = max(meds, key=meds.get), min(meds, key=meds.get)
             res.append((g, v, k, n, float(H), eps2, float(p), hi, lo, meds[lo], meds[hi]))
     if not res:
@@ -322,6 +330,8 @@ def group_numeric(ctx: Ctx, group: str | None = None) -> Section:
     return s
 
 
+from . import target as _target   # noqa: E402  (순환 import 방지를 위해 파일 끝에서 가져옴)
+
 REGISTRY = {
     "overview": overview,
     "quality": quality,
@@ -331,4 +341,7 @@ REGISTRY = {
     "corr_numeric": corr_numeric,
     "assoc_categorical": assoc_categorical,
     "group_numeric": group_numeric,
+    "target_overview": _target.target_overview,
+    "target_assoc": _target.target_assoc,
+    "target_model": _target.target_model,
 }

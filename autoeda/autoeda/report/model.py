@@ -49,7 +49,7 @@ class Report:
 
         p = self.plan.params
         args = [f'"{self.plan.source}"' if self.plan.source != "DataFrame" else "df"]
-        for k in ("target", "time", "group", "types", "sheet"):
+        for k in ("target", "time", "group", "groups", "task", "types", "sheet"):
             if p.get(k):
                 args.append(f"{k}={p[k]!r}")
         args.append(f"seed={p['seed']}")

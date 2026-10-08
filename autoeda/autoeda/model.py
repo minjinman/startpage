@@ -10,6 +10,10 @@ from .kind import KindMatch
 from .validate import Finding
 
 
+class StepSkipped(Exception):
+    """오류가 아니라 조건 미충족으로 단계를 건너뛸 때 사용(사유가 리포트에 표시됨)."""
+
+
 def C_(name: str) -> str:
     """텍스트 안의 컬럼명 표식. 리포트에서는 굵게, llm_brief에서는 별칭으로 치환된다."""
     return f"⟦{name}⟧"

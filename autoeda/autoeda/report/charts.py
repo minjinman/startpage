@@ -83,3 +83,16 @@ def heatmap(corr: pd.DataFrame) -> str:
         ax.spines[:].set_visible(False)
         fig.colorbar(im, ax=ax, shrink=0.8, label="스피어만 ρ")
         return _b64(fig)
+
+
+def importance_bar(names: list[str], means, sds, xlabel: str) -> str:
+    with _rc():
+        n = len(names)
+        fig = Figure(figsize=(7.5, max(2.0, 0.34 * n + 0.8)), layout="constrained")
+        ax = fig.subplots()
+        y = np.arange(n)[::-1]
+        ax.barh(y, means, xerr=sds, color=_BLUE, ecolor=_GRAY, capsize=2)
+        ax.set_yticks(y, [str(s)[:24] for s in names])
+        ax.axvline(0, color=_GRAY, lw=0.8)
+        ax.set_xlabel(xlabel)
+        return _b64(fig)

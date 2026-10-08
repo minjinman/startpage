@@ -28,11 +28,6 @@ def test_no_target_inference(wine):
     assert not any("target" in s[0] for s in rep.skipped)
 
 
-def test_target_marked_not_implemented(wine):
-    rep = analyze(wine, target="등급")
-    assert any("target" in s[0] for s in rep.skipped)
-
-
 def test_bad_column_gives_suggestion(wine):
     with pytest.raises(ValueError, match="등급"):
         analyze(wine, group="등금")
